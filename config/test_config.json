@@ -1,0 +1,23 @@
+{
+  "playwright": {
+    "headless": true,
+    "timeout": 30000,
+    "browsers": ["chromium"],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "test_settings": {
+    "max_retries": 2,
+    "retry_delay": 1000,
+    "screenshot_on_failure": true,
+    "video_recording": false
+  },
+  "target_applications": {
+    "default": {
+      "url": "http://localhost:3000",
+      "name": "Default App"
+    }
+  }
+}

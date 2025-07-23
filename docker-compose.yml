@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # Ollama service for local LLM (Llama 3)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    networks:
+      - qa_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        reservations:
+          memory: 8G
+    command: >
+      sh -c "ollama serve & 
+             sleep 30 && 
+             ollama pull llama3.1:8b && 
+             wait"
+
+  # QA Analyzer - Main orchestration service
+  qa-analyzer:
+    build: 
+      context: ./qa-analyzer
+    container_name: qa-analyzer
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./code:/app/code:ro
+      - ./generated_tests:/app/generated_tests
+      - ./config:/app/config:ro
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - MCP_SERVER_URL=http://playwright-mcp:8001
+    networks:
+      - qa_network
+    depends_on:
+      - ollama
+      - playwright-mcp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Playwright MCP Server
+  playwright-mcp:
+    build:
+      context: ./playwright-mcp
+    container_name: playwright-mcp
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./config:/app/config:ro
+    networks:
+      - qa_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # QA Runner - Test execution service
+  qa-runner:
+    build:
+      context: ./qa-runner
+    container_name: qa-runner
+    volumes:
+      - ./generated_tests:/app/tests:ro
+      - ./test_results:/app/results
+      - ./target_app:/app/target_app:ro
+    environment:
+      - PYTHONPATH=/app
+      - PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+    networks:
+      - qa_network
+    depends_on:
+      - qa-analyzer
+    profiles:
+      - qa-runner
+
+volumes:
+  ollama_data:
+    driver: local
+
+networks:
+  qa_network:
+    driver: bridge
