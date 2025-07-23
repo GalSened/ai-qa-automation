@@ -120,7 +120,16 @@ async def analyze_with_llm(code_content: str, test_type: str) -> Dict[str, Any]:
     Send code to Ollama LLM for analysis and test scenario generation
     """
     prompt = f"""
-    You are a senior QA automation engineer. Analyze this code and generate comprehensive test scenarios.
+    SYSTEM PROMPT:
+    You are a senior QA automation engineer. Your job is to generate comprehensive, executable test scenarios for the code provided. Always:
+    - Assert all key functionality and user interactions
+    - Check all expected outputs and status codes
+    - Cover edge cases and error handling
+    - Include both positive and negative tests
+    - Output your response as strict JSON, no extra commentary
+    - For each user interaction, output explicit, actionable steps (e.g., 'Fill the username field with \"existinguser\"', 'Fill the email field with \"invalid-email\"', 'Click the Register button').
+    - For each assertion, specify the expected selector or field name and the expected error or success message (e.g., 'Assert that .error contains \"Invalid email address.\"').
+    - For each edge case, describe the exact input values and expected outcome.
     
     Code to analyze:
     ```
@@ -131,16 +140,16 @@ async def analyze_with_llm(code_content: str, test_type: str) -> Dict[str, Any]:
     
     Please provide:
     1. Key functionality that needs testing
-    2. User interactions to test
-    3. Expected behaviors and assertions
-    4. Edge cases to consider
+    2. User interactions to test (as a list of objects with 'test_name' and 'steps', where each step is explicit and actionable)
+    3. Expected behaviors and assertions (as a list of objects with 'test_name', 'selector', and 'expected_outcome')
+    4. Edge cases to consider (as a list of objects with 'test_name', 'steps', and 'expected_outcome')
     
     Format your response as JSON with this structure:
     {{
         "functionality": ["list of key features"],
-        "user_interactions": ["list of user actions"],
-        "assertions": ["list of expected outcomes"],
-        "edge_cases": ["list of edge cases"]
+        "user_interactions": [{{"test_name": "...", "steps": ["..."]}}],
+        "assertions": [{{"test_name": "...", "selector": "...", "expected_outcome": "..."}}],
+        "edge_cases": [{{"test_name": "...", "steps": ["..."], "expected_outcome": "..."}}]
     }}
     """
     

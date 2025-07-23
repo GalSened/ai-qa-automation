@@ -19,6 +19,10 @@ COPY . .
 # Create config directory
 RUN mkdir -p /app/config
 
+# Add non-root user
+RUN useradd -m appuser && chown -R appuser /app
+USER appuser
+
 # Expose port
 EXPOSE 8001
 

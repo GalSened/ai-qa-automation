@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import List, Dict, Any
 import asyncio
 import logging
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,11 +27,28 @@ TARGET_APP_DIR = Path("/app/target_app")
 # Ensure directories exist
 RESULTS_DIR.mkdir(exist_ok=True)
 
+class TestFileHandler(FileSystemEventHandler):
+    def __init__(self, runner):
+        self.runner = runner
+
+    def on_created(self, event):
+        if event.is_directory:
+            return
+        if event.src_path.endswith('.py'):
+            logger.info(f"New test file detected: {event.src_path}")
+            self.runner.run_single_test(Path(event.src_path))
+
+    def on_modified(self, event):
+        if event.is_directory:
+            return
+        if event.src_path.endswith('.py'):
+            logger.info(f"Test file modified: {event.src_path}")
+            self.runner.run_single_test(Path(event.src_path))
+
 class QATestRunner:
     """Main test runner class"""
     
     def __init__(self):
-        self.test_files = []
         self.results = {
             "total_tests": 0,
             "passed": 0,
@@ -38,48 +57,6 @@ class QATestRunner:
             "execution_time": 0,
             "test_results": []
         }
-    
-    def discover_tests(self) -> List[Path]:
-        """Discover all test files in the tests directory"""
-        logger.info(f"Discovering tests in: {TESTS_DIR}")
-        
-        if not TESTS_DIR.exists():
-            logger.warning(f"Tests directory not found: {TESTS_DIR}")
-            return []
-        
-        test_files = list(TESTS_DIR.glob("test_*.py"))
-        logger.info(f"Found {len(test_files)} test files")
-        
-        for test_file in test_files:
-            logger.info(f"  - {test_file.name}")
-        
-        return test_files
-    
-    def validate_test_file(self, test_file: Path) -> bool:
-        """Validate that a test file is properly formatted"""
-        try:
-            with open(test_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Basic validation checks
-            required_imports = ['pytest', 'playwright']
-            has_test_method = 'def test_' in content or 'async def test_' in content
-            
-            has_imports = any(imp in content for imp in required_imports)
-            
-            if not has_imports:
-                logger.warning(f"Test file {test_file.name} missing required imports")
-                return False
-            
-            if not has_test_method:
-                logger.warning(f"Test file {test_file.name} has no test methods")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error validating test file {test_file.name}: {str(e)}")
-            return False
     
     def run_single_test(self, test_file: Path) -> Dict[str, Any]:
         """Run a single test file and return results"""
@@ -129,6 +106,15 @@ class QATestRunner:
                     break
             
             logger.info(f"Test {test_file.name} completed with status: {test_result['status']}")
+            self.results["test_results"].append(test_result)
+            if test_result["status"] == "passed":
+                self.results["passed"] += 1
+            elif test_result["status"] == "failed":
+                self.results["failed"] += 1
+            else:
+                self.results["skipped"] += 1
+            self.results["total_tests"] += 1
+            self.save_results()
             
             return test_result
             
@@ -150,56 +136,6 @@ class QATestRunner:
                 "status": "error",
                 "error": str(e)
             }
-    
-    def run_all_tests(self) -> Dict[str, Any]:
-        """Run all discovered tests and compile results"""
-        logger.info("Starting test execution")
-        
-        # Discover tests
-        test_files = self.discover_tests()
-        
-        if not test_files:
-            logger.warning("No test files found")
-            return {
-                "total_tests": 0,
-                "passed": 0,
-                "failed": 0,
-                "skipped": 0,
-                "execution_time": 0,
-                "test_results": [],
-                "message": "No test files found"
-            }
-        
-        start_time = time.time()
-        
-        # Run each test
-        for test_file in test_files:
-            # Validate test file first
-            if not self.validate_test_file(test_file):
-                logger.warning(f"Skipping invalid test file: {test_file.name}")
-                self.results["skipped"] += 1
-                continue
-            
-            # Run the test
-            test_result = self.run_single_test(test_file)
-            self.results["test_results"].append(test_result)
-            
-            # Update counters
-            if test_result["status"] == "passed":
-                self.results["passed"] += 1
-            elif test_result["status"] == "failed":
-                self.results["failed"] += 1
-            else:
-                self.results["skipped"] += 1
-        
-        # Calculate totals
-        self.results["total_tests"] = len(test_files)
-        self.results["execution_time"] = time.time() - start_time
-        
-        # Save results to file
-        self.save_results()
-        
-        return self.results
     
     def save_results(self):
         """Save test results to JSON file"""
@@ -239,7 +175,7 @@ class QATestRunner:
 
 def main():
     """Main execution function"""
-    logger.info("QA Runner starting...")
+    logger.info("QA Runner with file watcher starting...")
     
     # Check if tests directory exists
     if not TESTS_DIR.exists():
@@ -249,25 +185,17 @@ def main():
     
     # Initialize and run tests
     runner = QATestRunner()
-    
+    event_handler = TestFileHandler(runner)
+    observer = Observer()
+    observer.schedule(event_handler, str(TESTS_DIR), recursive=False)
+    observer.start()
+    logger.info(f"Watching for new/modified test files in {TESTS_DIR}")
     try:
-        results = runner.run_all_tests()
-        runner.print_summary()
-        
-        # Exit with appropriate code
-        if results["failed"] > 0:
-            logger.info("Some tests failed")
-            sys.exit(1)
-        else:
-            logger.info("All tests passed successfully")
-            sys.exit(0)
-            
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
-        logger.info("Test execution interrupted by user")
-        sys.exit(130)
-    except Exception as e:
-        logger.error(f"Test execution failed: {str(e)}")
-        sys.exit(1)
+        observer.stop()
+    observer.join()
 
 if __name__ == "__main__":
     main()

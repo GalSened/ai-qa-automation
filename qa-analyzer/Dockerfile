@@ -21,6 +21,10 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p /app/code /app/generated_tests /app/config
 
+# Add non-root user
+RUN useradd -m appuser && chown -R appuser /app
+USER appuser
+
 # Expose port
 EXPOSE 8000
 

@@ -36,6 +36,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
+# Add non-root user
+RUN useradd -m appuser && chown -R appuser /app
+USER appuser
+
 # Copy application code
 COPY . .
 

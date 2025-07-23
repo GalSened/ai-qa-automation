@@ -22,11 +22,10 @@ services:
       resources:
         reservations:
           memory: 8G
-    command: >
-      sh -c "ollama serve & 
-             sleep 30 && 
-             ollama pull llama3.1:8b && 
-             wait"
+    # The default command is 'serve'. To preload a model, run:
+    # docker exec ollama ollama pull llama3.1:8b
+    # after the service is up.
+    restart: unless-stopped
 
   # QA Analyzer - Main orchestration service
   qa-analyzer:
@@ -52,6 +51,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
   # Playwright MCP Server
   playwright-mcp:
@@ -69,6 +69,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
   # QA Runner - Test execution service
   qa-runner:
@@ -88,6 +89,7 @@ services:
       - qa-analyzer
     profiles:
       - qa-runner
+    restart: unless-stopped
 
 volumes:
   ollama_data:
@@ -96,3 +98,5 @@ volumes:
 networks:
   qa_network:
     driver: bridge
+
+# NOTE: test_results/ and target_app/ directories should exist in the repo or will be created as empty by Docker. Add .gitkeep or README if needed.
